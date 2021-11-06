@@ -1,2 +1,2 @@
 # asyncMessagingApp
-Uses SQS to put data to backend database
+Uses SQS with backend database
