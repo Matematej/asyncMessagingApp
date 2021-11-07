@@ -5,16 +5,15 @@ sqs = boto3.resource('sqs')
 
 
 def lambda_handler(event, context):
-    
-    name = event['Name']
-    Mbti = event['MBTI']
-    
-    params= json.dumps({"Name": name, "MBTI": Mbti})
+    decoded_event=json.loads(event['body'])
+    name = decoded_event["Name"]
+    Mbti = decoded_event["MBTI"]
+    params={"Name": name, "MBTI": Mbti}
     print(params)
     queue = sqs.get_queue_by_name(QueueName='MBTIQueue')
     print(queue.url)
     
-    response = queue.send_message(MessageBody= params)
+    response = queue.send_message(MessageBody=json.dumps(params))
     
     return {
             "statusCode": 200,

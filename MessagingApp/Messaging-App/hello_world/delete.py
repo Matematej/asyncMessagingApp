@@ -5,13 +5,12 @@ sqs = boto3.resource('sqs')
 
 
 def lambda_handler(event, context):
-    
-    name = event['Name']
-    Mbti = event['MBTI']
-    
-    params= json.dumps({"Name": name, "MBTI": Mbti})
+    decoded_event=json.loads(event['body'])
+    name = decoded_event['Name']
+
+    params= json.dumps({"Name": name})
     print(params)
-    queue = sqs.get_queue_by_name(QueueName='MBTIQueue')
+    queue = sqs.get_queue_by_name(QueueName='DeleteMBTIQueue')
     print(queue.url)
     
     response = queue.send_message(MessageBody= params)
@@ -19,6 +18,6 @@ def lambda_handler(event, context):
     return {
             "statusCode": 200,
             "body": json.dumps({
-                "message": "MBTI sent to sqs"
+                "message": "Delete request sent to sqs"
             })
         }

@@ -2,9 +2,20 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "sam-app"
+stack_name = "AsyncMessagingApp"
 s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1q5tef4gz8uo9"
-s3_prefix = "sam-app"
+s3_prefix = "AsyncMessagingApp"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = []
+
+[Prod]
+[Prod.deploy]
+[Prod.deploy.parameters]
+stack_name = "AsyncMessagingApp"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1q5tef4gz8uo9"
+s3_prefix = "AsyncMessagingApp"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"

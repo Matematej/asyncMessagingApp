@@ -1,16 +1,19 @@
 AWSTemplateFormatVersion: 2010-09-09
 Transform: 'AWS::Serverless-2016-10-31'
-Description: ToDo - Every lambda its own sqs, delete one environment
+Description: Async app writes and reads from database
 Globals:
   Function:
     Timeout: 20
     MemorySize: 512
-    Environment:
-      Variables:
-        TABLE_NAME: !Ref MBTITABLE
-        ENDPOINT_OVERRIDE: ''
         
 Resources:
+#Api gateway
+  ServerlessRestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors: "'*'"
+      
 #Process SQS Lambdas
   LambdaProcessSQS:
     Type: AWS::Serverless::Function
@@ -21,34 +24,51 @@ Resources:
       Handler: create_db.lambda_handler
       Runtime: python3.7
       Role: !GetAtt BackendLambdaRole.Arn
+      
+  DeleteLambdaProcessSQS:
+    Type: AWS::Serverless::Function
+    DependsOn:
+      - DeleteMBTIQueue
+    Properties:
+      CodeUri: hello_world/
+      Handler: delete_db.lambda_handler
+      Runtime: python3.7
+      Role: !GetAtt BackendLambdaRole.Arn
 
   BackendLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Policies:
-        - PolicyName: allowMessagingSQS
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
+      Type: AWS::IAM::Role
+      Properties:
+        Policies:
+          - PolicyName: allowPostMessagingDatabase
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:*'
+                Resource: !GetAtt MBTIQueue.Arn
+          - PolicyName: allowDeleteMessagingDatabase
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:*'
+                Resource: !GetAtt DeleteMBTIQueue.Arn
+        AssumeRolePolicyDocument:
+          Statement:
             - Effect: Allow
-              Action:
-                - 'sqs:*'
-              Resource: !GetAtt MBTIQueue.Arn
-              
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Action: "sts:AssumeRole"
-            Principal:
-              Service:
-                - "lambda.amazonaws.com"
-        Version: "2012-10-17"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+              Action: "sts:AssumeRole"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+          Version: "2012-10-17"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
 
 #FRONT LAMBDAS  
-#Role for put to dynamo
+#Role for put to sqs
   LambdaSendSQSrole:
       Type: AWS::IAM::Role
       Properties:
@@ -62,7 +82,7 @@ Resources:
             Action:
             - sts:AssumeRole
         Policies:
-          - PolicyName: allowMessagingSQS
+          - PolicyName: allowPostMessagingSQS
             PolicyDocument:
               Version: '2012-10-17'
               Statement:
@@ -70,21 +90,30 @@ Resources:
                 Action:
                   - 'sqs:*'
                 Resource: !GetAtt MBTIQueue.Arn
+          - PolicyName: allowDeleteMessagingSQS
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:*'
+                Resource: !GetAtt DeleteMBTIQueue.Arn
                 
   LambdaDelete:
     Type: 'AWS::Serverless::Function'
     Properties:
       CodeUri: hello_world/
       Handler: delete.lambda_handler
+      Role: !GetAtt LambdaSendSQSrole.Arn
       Runtime: python3.7
       Policies:
         - SQSSendMessagePolicy:
-            QueueName: !Ref MBTIQueue
+            QueueName: !Ref DeleteMBTIQueue
       Events:
         DeleteOrder:
           Type: Api
           Properties:
-            Path: '/mbtis/{mbti_id}'
+            Path: /mbtis/mbti_id
             Method: delete
   
   LambdaPost:
@@ -110,14 +139,14 @@ Resources:
       CodeUri: hello_world/
       Handler: get.lambda_handler
       Runtime: python3.7
+      Role: !GetAtt BackendLambdaRole.Arn
       Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !Ref MBTIQueue
+      - AmazonDynamoDBFullAccess
       Events:
         GetOrder:
           Type: Api
           Properties:
-            Path: '/mbtis/{mbti_id}'
+            Path: /mbtis/mbti_id
             Method: get
 #BACKEND DATABASE
   MBTITABLE:
@@ -131,12 +160,8 @@ Resources:
         - AttributeName: Name
           KeyType: HASH
       BillingMode: PAY_PER_REQUEST
-#SQS 
-  MyDeadLetterQueue:
-    Type: 'AWS::SQS::Queue'
-    Properties:
-      QueueName: DeadLetterMBTIQueue
       
+#SQS Mappings
   MappingLambdaMessaging:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -144,7 +169,16 @@ Resources:
       Enabled: true
       EventSourceArn: !GetAtt MBTIQueue.Arn
       FunctionName: !Ref LambdaProcessSQS
-
+      
+  MappingLambdaMessagingDelete:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt DeleteMBTIQueue.Arn
+      FunctionName: !Ref DeleteLambdaProcessSQS
+      
+#SQS Queues
   MBTIQueue:
     Type: 'AWS::SQS::Queue'
     Properties:
@@ -155,8 +189,29 @@ Resources:
           - MyDeadLetterQueue
           - Arn
         maxReceiveCount: 5
+        
+  MyDeadLetterQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: DeadLetterMBTIQueue
+      
+  DeleteMBTIQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: DeleteMBTIQueue
+      VisibilityTimeout: 30
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt 
+          - DeleteMyDeadLetterQueue
+          - Arn
+        maxReceiveCount: 5
+        
+  DeleteMyDeadLetterQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: DeleteDeadLetterMBTIQueue
 
-#Outputs:
- # ProdDataEndpoint:
-  #  Description: "API Prod stage endpoint"
-   # Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+Outputs:
+  APIGatewayEndpoint:
+    Description: "API Prod stage endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
