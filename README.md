@@ -10,6 +10,6 @@
 #### SQS
 
 # How to run:
-#### Clone the asyncMessagingApp folder: git clone https://github.com/Matematej/asyncMessagingApp.git
+#### Clone the asyncMessagingApp folder:    git clone https://github.com/Matematej/asyncMessagingApp.git
 #### Run sam deploy
 
